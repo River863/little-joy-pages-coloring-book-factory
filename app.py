@@ -1,70 +1,131 @@
+import os
+from pathlib import Path
 import streamlit as st
-from dataclasses import dataclass, asdict
+from factory.generator import plan_scenes, generate_page, save_project
+from factory.metadata import generate_listing
+from factory.exporter import slugify, build_paperback_interior, build_listing_text, make_zip
 
 st.set_page_config(page_title="Little Joy Pages Factory", page_icon="🎨", layout="wide")
 
-@dataclass
-class BookSpec:
-    concept: str
-    pages: int
-    audience: str
-    special_scenes: str
-    sayings: bool
-    paperback: bool
-    kindle: bool
-    trim_size: str
-    blank_backs: bool
+DEFAULT_STYLE = """High-quality printable coloring-book line art. Cute, cozy, polished character illustration. Bold, smooth, clean black outlines on a pure white background. Full-page composition with comfortable margins. Detailed but easy and satisfying to color. Consistent character proportions and visual language across the whole book. No grayscale, no shading, no color, no page numbers, no watermark, no random text, no contact sheet, no panels, no cropped subject, no photorealism."""
 
-DEFAULT_STYLE = """High-quality printable coloring-book line art. Cute, cozy, polished character illustration. Bold, smooth, clean black outlines on a pure white background. Full-page composition with comfortable margins. Detailed enough to feel premium but with open spaces that are enjoyable to color. Consistent character proportions and visual language across the entire book. No grayscale, no shading, no color, no page numbers, no watermark, no random text, no contact sheet, no panels, no cropped subject, no photorealism."""
+try:
+    if "OPENAI_API_KEY" in st.secrets:
+        os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+except Exception:
+    pass
+
+for key, default in {"scenes": [], "approved": {}, "images": {}, "listing": None}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 st.title("🎨 Little Joy Pages Coloring Book Factory")
-st.caption("Idea → individual coloring pages → review → KDP package")
+st.caption("Create → generate individual pages → review/regenerate → export KDP package")
 
 with st.sidebar:
-    st.header("Little Joy Pages Style")
-    st.text_area("Base art direction", DEFAULT_STYLE, height=260, key="style")
-    st.divider()
-    st.subheader("API")
-    st.info("The deployed app will read your OpenAI API key from Streamlit secrets. Never commit API keys to GitHub.")
+    st.header("Brand settings")
+    publisher = st.text_input("Publisher / imprint", "Little Joy Pages")
+    style = st.text_area("Little Joy Pages art direction", DEFAULT_STYLE, height=270)
+    st.caption("Your OpenAI API key belongs in Streamlit Secrets as OPENAI_API_KEY. Never paste it into GitHub source code.")
 
-st.subheader("1. Create a book")
-left, right = st.columns(2)
-with left:
-    concept = st.text_area("What book do you want?", placeholder="Cute koalas doing cozy everyday activities...", height=120)
-    pages = st.number_input("Coloring pages", min_value=5, max_value=100, value=20, step=1)
+st.header("1 · Book brief")
+a, b = st.columns(2)
+with a:
+    concept = st.text_area("What do you want to generate?", "Cute koalas doing cozy everyday activities", height=110)
+    pages = st.number_input("Coloring pages", 5, 100, 20)
     audience = st.selectbox("Audience", ["Kids", "Teens", "Adults", "Teens & adults", "All ages"], index=3)
-    special = st.text_area("Must-have scenes", placeholder="Koala wearing a sleeping eye mask; reading in bed; drinking coffee; relaxing in a hammock")
-with right:
-    sayings = st.checkbox("Allow occasional cute sayings", value=False)
-    trim = st.selectbox("Paperback trim size", ["8.5 × 11 in", "8 × 10 in", "8.25 × 8.25 in"], index=0)
-    blank_backs = st.checkbox("Blank back after every coloring page", value=True)
-    st.markdown("**Outputs**")
-    paperback = st.checkbox("Paperback / print-ready KDP package", value=True)
-    kindle = st.checkbox("Kindle / digital edition package", value=True)
+    special = st.text_area("Must-have scenes", "Koala wearing a sleeping eye mask")
+with b:
+    sayings = st.checkbox("Occasional cute sayings", False)
+    trim = st.selectbox("Paperback trim", ["8.5 × 11 in", "8 × 10 in", "8.25 × 8.25 in"])
+    blank_backs = st.checkbox("Blank back after each coloring page", True)
+    paperback = st.checkbox("Paperback", True)
+    kindle = st.checkbox("Kindle / digital package", True)
 
-if st.button("✨ Plan My Book", type="primary", use_container_width=True):
-    if not concept.strip():
-        st.error("Tell me what you want the book to be about first.")
+if st.button("🧠 Create scene plan", type="primary", use_container_width=True):
+    if not os.environ.get("OPENAI_API_KEY"):
+        st.error("Add OPENAI_API_KEY to Streamlit Secrets first.")
     else:
-        spec = BookSpec(concept, int(pages), audience, special, sayings, paperback, kindle, trim, blank_backs)
-        st.session_state["book_spec"] = asdict(spec)
-        st.session_state["planned"] = True
+        with st.spinner("Planning distinct pages..."):
+            st.session_state.scenes = plan_scenes(concept, int(pages), audience, special, sayings)
+            st.session_state.approved = {i: False for i in range(len(st.session_state.scenes))}
+            st.session_state.images = {}
+            st.session_state.listing = None
 
-if st.session_state.get("planned"):
-    st.success("Book brief saved. The next build step generates a unique scene plan and then creates every page as a separate image request/file.")
-    st.subheader("2. Production pipeline")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Scenes", st.session_state["book_spec"]["pages"])
-    c2.metric("Image files", st.session_state["book_spec"]["pages"])
-    c3.metric("Paperback", "Yes" if st.session_state["book_spec"]["paperback"] else "No")
-    c4.metric("Kindle", "Yes" if st.session_state["book_spec"]["kindle"] else "No")
+if st.session_state.scenes:
+    st.header("2 · Scene plan")
+    edited = []
+    for i, scene in enumerate(st.session_state.scenes):
+        edited.append(st.text_input(f"Page {i+1}", scene, key=f"scene_{i}"))
+    st.session_state.scenes = edited
 
-    st.markdown("""
-    **Pipeline:** Scene plan → Generate each image individually → Quality check → Gallery review → Regenerate weak pages → Approve → Build publishing package.
+    if st.button("🎨 Generate all pages — one image request per page", use_container_width=True):
+        slug = slugify(concept)
+        project = Path("books") / slug
+        progress = st.progress(0, text="Starting...")
+        for i, scene in enumerate(st.session_state.scenes):
+            path = project / "artwork" / f"page_{i+1:02d}.png"
+            progress.progress(i / len(st.session_state.scenes), text=f"Generating page {i+1} of {len(st.session_state.scenes)}")
+            generate_page(scene, path, style)
+            st.session_state.images[i] = str(path)
+        progress.progress(1.0, text="All pages generated as separate files.")
+        save_project(project / "project.json", {"concept": concept, "scenes": st.session_state.scenes, "trim": trim, "publisher": publisher})
 
-    The generation worker intentionally makes **one API image request per coloring page**. It never asks an image model to place multiple coloring pages on one canvas.
-    """)
+if st.session_state.images:
+    st.header("3 · Review your coloring pages")
+    st.caption("Approve good pages. Regenerate only the ones you don't like.")
+    cols = st.columns(3)
+    for i in range(len(st.session_state.scenes)):
+        if i not in st.session_state.images:
+            continue
+        with cols[i % 3]:
+            st.image(st.session_state.images[i], caption=f"Page {i+1}", use_container_width=True)
+            st.session_state.approved[i] = st.checkbox("Approve", st.session_state.approved.get(i, False), key=f"approve_{i}")
+            if st.button("🔄 Regenerate", key=f"regen_{i}", use_container_width=True):
+                generate_page(st.session_state.scenes[i], Path(st.session_state.images[i]), style)
+                st.session_state.approved[i] = False
+                st.rerun()
+
+    approved_count = sum(st.session_state.approved.values())
+    st.progress(approved_count / len(st.session_state.scenes), text=f"{approved_count}/{len(st.session_state.scenes)} pages approved")
+
+    if approved_count == len(st.session_state.scenes):
+        st.header("4 · Build publishing package")
+        if st.button("📦 Build my KDP files", type="primary", use_container_width=True):
+            slug = slugify(concept)
+            project = Path("books") / slug
+            image_paths = [Path(st.session_state.images[i]) for i in range(len(st.session_state.scenes))]
+            with st.spinner("Creating listing information and publishing files..."):
+                listing = generate_listing(concept, audience, len(image_paths))
+                st.session_state.listing = listing
+                if paperback:
+                    build_paperback_interior(image_paths, project / f"{slug}_paperback_interior.pdf", trim, listing["title"], publisher, blank_backs)
+                listing_text = build_listing_text(listing["title"], listing["subtitle"], listing["description"], listing["keywords"], trim, paperback, kindle)
+                (project / "KDP_LISTING.txt").write_text(listing_text, encoding="utf-8")
+                if kindle:
+                    (project / "KINDLE_README.txt").write_text("Kindle fixed-layout packaging is intentionally separated from the print PDF. Use the approved artwork and validate the final fixed-layout edition in Kindle Previewer before upload. A later adapter can target the current Kindle packaging toolchain without changing your approved artwork.", encoding="utf-8")
+                make_zip(project, project / f"{slug}_complete_package.zip")
+            st.success("Package built.")
+
+        if st.session_state.listing:
+            listing = st.session_state.listing
+            st.subheader("Copy into KDP")
+            st.text_input("Title", listing["title"])
+            st.text_input("Subtitle", listing["subtitle"])
+            st.text_area("Description", listing["description"], height=180)
+            st.write("**7 keyword phrases**")
+            for n, kw in enumerate(listing["keywords"], 1):
+                st.code(f"{n}. {kw}")
+
+            slug = slugify(concept)
+            project = Path("books") / slug
+            for path, label, mime in [
+                (project / f"{slug}_paperback_interior.pdf", "Download paperback interior PDF", "application/pdf"),
+                (project / "KDP_LISTING.txt", "Download KDP listing instructions", "text/plain"),
+                (project / f"{slug}_complete_package.zip", "Download complete package ZIP", "application/zip"),
+            ]:
+                if path.exists():
+                    st.download_button(label, path.read_bytes(), file_name=path.name, mime=mime, use_container_width=True)
 
 st.divider()
-st.subheader("Planned KDP package")
-st.write("Once artwork is approved, the app will provide individual high-resolution pages, paperback interior PDF, paperback full-wrap cover, Kindle/digital assets, listing metadata, keywords, publishing settings, and a complete ZIP package.")
+st.caption("Little Joy Pages Factory keeps every coloring page as its own image file. AI-generated artwork should be disclosed accurately wherever KDP asks about AI-generated content.")
