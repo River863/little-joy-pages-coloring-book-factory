@@ -13,8 +13,20 @@ TRIMS = {
 
 
 def estimated_interior_pages(coloring_pages: int, blank_backs: bool, front_matter_pages: int = 2) -> int:
-    art_pages = coloring_pages * (2 if blank_backs else 1)
-    return front_matter_pages + art_pages
+    count = front_matter_pages + coloring_pages * (2 if blank_backs else 1)
+    return count if count % 2 == 0 else count + 1
+
+
+def paperback_cover_dimensions(trim_name: str, page_count: int) -> dict:
+    """KDP B&W white-paper paperback formula: spine = pages × 0.002252 inches."""
+    trim = TRIMS[trim_name]
+    spine = page_count * 0.002252
+    bleed = 0.125
+    return {
+        "spine": spine,
+        "width": bleed + trim.width + spine + trim.width + bleed,
+        "height": bleed + trim.height + bleed,
+    }
 
 
 def package_manifest(slug: str, paperback: bool, kindle: bool) -> list[str]:
