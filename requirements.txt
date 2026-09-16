@@ -1,6 +1,6 @@
-streamlit>=1.38
-openai>=1.50
-Pillow>=10.4
-reportlab>=4.2
-pydantic>=2.8
-python-dotenv>=1.0
+streamlit>=1.50
+openai>=1.109
+Pillow>=11.3
+reportlab>=4.4
+python-dotenv>=1.1
+pytest>=8.4
