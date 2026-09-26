@@ -1,88 +1,69 @@
 # Little Joy Pages Coloring Book Factory 🎨
 
-Private Streamlit app that turns a coloring-book idea into individual AI-generated pages and a downloadable KDP publishing package.
+Private Streamlit app for turning approved Little Joy Pages coloring artwork into KDP-ready publishing files.
 
-## What it does
+## No-extra-cost workflow (preferred)
 
-1. You describe a book (for example, **Cute koalas doing cozy things**).
-2. GPT plans the requested number of distinct scenes.
-3. You can edit the scene list before paying for image generation.
-4. The app sends **one image-generation request per page** and saves every page as its own PNG — never a contact sheet.
-5. A review gallery lets you approve pages or regenerate only the ones you dislike.
-6. After approval, the app creates publishing metadata and colorful cover art.
-7. It exports the selected editions and one complete ZIP.
+The production workflow does **not** require an OpenAI API key:
 
-## Outputs
+1. Plan the book and generate Little Joy Pages artwork in ChatGPT using the user's existing ChatGPT access.
+2. Save each approved coloring page as an individual PNG/JPG.
+3. Upload the approved pages to the Factory.
+4. Arrange/review pages and replace any page that needs correction.
+5. Upload the approved color cover artwork.
+6. Export the Kindle and paperback packages.
+
+The app should treat AI generation through an API as optional, not required. The core Factory workflow is upload → review → package → export.
+
+## Target outputs
+
+### Kindle first
+- Fixed-layout EPUB 3 using `rendition:layout=pre-paginated`
+- 1600 × 2560 JPEG marketing cover
+- No unnecessary blank reverse pages
 
 ### Paperback
 - Individual high-resolution PNG coloring pages
 - KDP no-bleed black-and-white interior PDF
+- Blank reverse side after each coloring page
+- 8.5 × 11 inch trim by default
 - Full-wrap paperback cover PDF with KDP bleed and calculated white-paper spine width
 - Title/copyright front matter
 
-### Kindle
-- Fixed-layout EPUB 3 package using `rendition:layout=pre-paginated`
-- 1600 × 2560 JPEG marketing cover
-
 ### Publishing helper
-- Suggested title
-- Subtitle
+- Suggested title and subtitle
 - Ready-to-paste description
 - Seven keyword phrases
 - Trim/page-count/upload instructions
 - AI-content disclosure reminder
 - Complete ZIP containing the project assets
 
-## Current defaults
+## Little Joy Pages art direction
 
-- Text planning/metadata: `gpt-5.6-terra`
-- Image generation: `gpt-image-2.5-sunburst`
-- 20 coloring pages
-- 8.5 × 11 in paperback
-- Black ink / white paper
-- No bleed interior
-- Blank reverse side after each coloring page
-- Little Joy Pages cute/cozy line-art direction
+Keep books visually consistent with the existing catalog: cute/kawaii rounded characters, expressive friendly faces, clean bold black outlines, pure white coloring areas, cozy scenes, enough detail to be interesting without becoming overly intricate, and polished colorful covers.
 
-You can override the OpenAI models with the `OPENAI_TEXT_MODEL` and `OPENAI_IMAGE_MODEL` environment variables.
+## Current book workflow
 
-## Run locally
+Publish Kindle first. After the Kindle title is created in KDP, use **Start your paperback** so KDP can reuse the listing metadata, then upload the separate print-ready paperback interior and wrap cover.
 
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
-pip install -r requirements.txt
-export OPENAI_API_KEY="your-key"  # Windows PowerShell: $env:OPENAI_API_KEY="your-key"
-streamlit run app.py
-```
+## Optional API mode
 
-## Deploy with Streamlit Community Cloud
+The repository may also support automated planning/image generation through an OpenAI API key. This is optional and should not block the upload-based workflow. Do not require the user to purchase API credits to use the Factory for packaging approved artwork.
 
-1. Create a new Streamlit app from this private GitHub repository.
-2. Set the main file to `app.py`.
-3. Open the deployed app's **Settings → Secrets**.
-4. Add:
-
-```toml
-OPENAI_API_KEY = "your-real-key"
-```
-
-5. Reboot the app.
-
-Never commit the real API key. `.streamlit/secrets.toml` is ignored by Git.
+If API mode is used, never commit a real API key to GitHub. Store secrets only in Streamlit's Secrets settings.
 
 ## KDP notes
 
-The app calculates paperback cover dimensions for **black-and-white interiors on white paper** using KDP's current spine formula (`page count × 0.002252 in`) and 0.125 in cover bleed. Books below 79 pages receive no spine text. Always run the finished paperback through KDP Print Previewer.
+Paperback cover dimensions for black-and-white interiors on white paper use the final page count and KDP bleed requirements. Books below 79 pages receive no spine text. Always run the finished paperback through KDP Print Previewer.
 
-The Kindle exporter produces a fixed-layout EPUB 3 with pre-paginated metadata plus a separate marketing cover. Always validate the EPUB in Kindle Previewer before uploading.
+The Kindle exporter should produce a fixed-layout EPUB plus a separate marketing cover. Always validate the EPUB in Kindle Previewer before uploading.
 
-KDP requirements can change. The app deliberately tells the publisher to verify current categories, pricing, royalties, and upload choices rather than hard-coding those business decisions.
+KDP requirements can change, so verify current categories, pricing, royalties, and upload choices during publishing.
 
 ## AI disclosure
 
-The generated artwork is AI-generated. Answer KDP's AI-generated-content disclosure accurately during title setup.
+Artwork generated with generative AI should be disclosed accurately in KDP's AI-generated-content section.
 
 ## Privacy
 
-Generated books live in the app runtime's `books/` directory and are ignored by Git. They are not committed to this repository.
+Generated books should remain in the app runtime or user downloads and should not be committed to this repository.
